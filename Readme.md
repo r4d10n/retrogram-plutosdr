@@ -14,7 +14,7 @@ Hacked from Ettus UHD RX ASCII Art DFT code for ADALM PLUTO.
 
 ![retrogram~plutosdr](https://imgur.com/6tB0f9V.jpg)
 
-Pan & Zoom spectrum using keyboard controls [decrement-Increment]. [Full feature demo](https://www.youtube.com/watch?v=JnrknBrvYjw)
+Pan & Zoom spectrum using keyboard controls [decrement-Increment]. [[Full feature demo](https://www.youtube.com/watch?v=JnrknBrvYjw)]
 
 * Center Frequency using keys [f-F] 
 * Sampling rate    using keys [r-R]
