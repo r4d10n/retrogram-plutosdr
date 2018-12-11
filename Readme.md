@@ -12,6 +12,8 @@
 Wideband Spectrum analyzer on your terminal/ssh console with ASCII art. 
 Hacked from Ettus UHD RX ASCII Art DFT code for ADALM PLUTO.
 
+![retrogram~plutosdr](https://giphy.com/embed/65MtMQ2BfuWkcvGrza)
+
 Pan & Zoom spectrum using keyboard controls [decrement-Increment]. 
 
 * Center Frequency using keys [f-F] 
