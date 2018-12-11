@@ -12,16 +12,16 @@
 Wideband Spectrum analyzer on your terminal/ssh console with ASCII art. 
 Hacked from Ettus UHD RX ASCII Art DFT code for ADALM PLUTO.
 
-Pan & Zoom spectrum using keyboard controls. 
-decrement-Increment Center Frequency using keys [f-F] 
-				    Sampling rate 	 using keys [r-R]
-				    Bandwidth 		 using keys [b-B]
-				    Gain 			 using keys [g-G]
-				    Reference level  using keys [l-L] 
-				    Dynamic Range    using keys [d-D]
-				    Frame rate       using keys [s-S]
-				    DFT bin count    using keys [n-N]
-				    Tuning step		 using keys [t-T]
+	Pan & Zoom spectrum using keyboard controls. 
+	decrement-Increment Center Frequency using keys [f-F] 
+					    Sampling rate 	 using keys [r-R]
+					    Bandwidth 		 using keys [b-B]
+					    Gain 			 using keys [g-G]
+					    Reference level  using keys [l-L] 
+				    	Dynamic Range    using keys [d-D]
+				    	Frame rate       using keys [s-S]
+				    	DFT bin count    using keys [n-N]
+				    	Tuning step		 using keys [t-T]
 
 Tuning step applies for decrementing / Incrementing Center Frequency, Sampling Rate and Bandwidth.
 
@@ -44,6 +44,8 @@ Tuning step applies for decrementing / Incrementing Center Frequency, Sampling R
 	  --step arg (=1000000)       tuning step for rate/bw/freq [t-T]
 
 ## Requires: libiio, libcurses, libboost-program-options
+	
+	sudo apt install libiio-dev libncurses5-dev libboost-program-options-dev
 
 ## Build:
 
@@ -68,14 +70,11 @@ The static binary can then be scp'ed to Pluto after build - steps shown below.
 
 ## Run natively on Pluto (static binary - requires 'linux' terminfo files):
 
-	wget <github url>/retrogram-plutosdr.arm	
+	wget https://github.com/r4d10n/retrogram-plutosdr/raw/master/retrogram-plutosdr.arm
 	scp retrogram-plutosdr.arm root@192.168.2.1:/tmp
 
-	scp /usr/share/terminfo/l/linux root@192.168.2.1:/tmp
-
-(or)  
-
-	wget <github url>/linux 
+	scp /usr/share/terminfo/l/linux root@192.168.2.1:/tmp         (or)  
+	wget https://github.com/r4d10n/retrogram-plutosdr/raw/master/linux 
 	scp linux root@192.168.2.1:/tmp
 
 	ssh root@192.168.2.1
@@ -87,8 +86,8 @@ The static binary can then be scp'ed to Pluto after build - steps shown below.
 	mkdir /usr/share/terminfo/l
 	cp linux /usr/share/terminfo/l
 	export TERM=linux
-	chmod +x ./retrogram-plutosdr
-	./retrogram-plutosdr --rate 61e6 --bw 56e6 --gain 73 --freq 935e6 --step 5e6
+	chmod +x ./retrogram-plutosdr.arm
+	./retrogram-plutosdr.arm --rate 61e6 --bw 56e6 --gain 73 --freq 935e6 --step 5e6
 
 ---
 
