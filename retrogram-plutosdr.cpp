@@ -83,18 +83,21 @@ static struct iio_context *scan(void)
     return ctx;
 }
 
-int main(int argc, char *argv[]){
+int main(int argc, char *argv[])
+{
     
     //variables to be set by po
     std::string uri; 
     size_t num_bins;
     double rate, freq, step, gain, bw, frame_rate;
     float ref_lvl, dyn_rng;
+    bool show_controls;
     
     ssize_t ret;
     char attr_buf[1024];
 
     int ch;
+    bool loop = true;
 
     //setup the program options
     po::options_description desc("\nAllowed options");
@@ -112,6 +115,7 @@ int main(int argc, char *argv[]){
         ("ref-lvl", po::value<float>(&ref_lvl)->default_value(0), "reference level for the display (dB) [l-L]")
         ("dyn-rng", po::value<float>(&dyn_rng)->default_value(80), "dynamic range for the display (dB) [d-D]")
         ("step", po::value<double>(&step)->default_value(1e6), "tuning step for rate/bw/freq [t-T]")
+        ("show-controls", po::value<bool>(&show_controls)->default_value(true), "show the keyboard controls")
     ;
     po::variables_map vm;
     po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -233,7 +237,7 @@ int main(int argc, char *argv[]){
     //------------------------------------------------------------------
     //-- Main loop
     //------------------------------------------------------------------
-    while (true){
+    while (loop){
         
         buff.clear();
     
@@ -263,7 +267,7 @@ int main(int argc, char *argv[]){
             ascii_art_dft::log_pwr_dft(&buff.front(), buff.size())
         );
         std::string frame = ascii_art_dft::dft_to_plot(
-            lpdft, COLS, LINES-5,
+            lpdft, COLS, (show_controls ? LINES-5 : LINES),
             rate, 
             freq, 
             dyn_rng, ref_lvl
@@ -274,185 +278,204 @@ int main(int argc, char *argv[]){
     
         //curses screen handling: clear and print frame
         clear();        
-        printw("%s-={ retrogram~plutosdr }=-%s-",header.c_str(),header.c_str());
-        printw("[f-F]req: %4.3f MHz   |   [r-R]ate: %2.2f Msps   |   [b-B]w: %2.2f MHz   |   [g-G]ain: %2.0f dB\n\n", freq/1e6, rate/1e6, bw/1e6, gain);
-        printw("[d-D]yn Range: %2.0f dB    |   Ref [l-L]evel: %2.0f dB   |   fp[s-S] : %2.0f   |   [n-N]um bins: %d   |   [t-T]uning step: %3.3f M\n", dyn_rng, ref_lvl, frame_rate, num_bins,step/1e6);
-	    printw("%s", border.c_str());
+        if (show_controls)
+        {
+            printw("%s-={ retrogram~plutosdr }=-%s-",header.c_str(),header.c_str());
+            printw("[f-F]req: %4.3f MHz   |   [r-R]ate: %2.2f Msps   |   [b-B]w: %2.2f MHz"
+                   "   |   [g-G]ain: %2.0f dB\n\n", freq/1e6, rate/1e6, bw/1e6, gain);
+            printw("[d-D]yn Range: %2.0f dB    |   Ref [l-L]evel: %2.0f dB   |   fp[s-S] :"
+                   " %2.0f   |   [n-N]um bins: %d   |   [t-T]uning step: %3.3f M\n", 
+                   dyn_rng, ref_lvl, frame_rate, num_bins,step/1e6, show_controls);
+            printw("%s", border.c_str());
+        }        
         printw("%s\n", frame.c_str());
 
         //curses key handling: no timeout, any key to exit
         timeout(0);
         ch = getch();
 
-        if (ch == 'r')
+        switch(ch)
         {
-            ret = iio_channel_attr_read(rxch, "sampling_frequency", attr_buf, sizeof(attr_buf));
-            if (ret > 0)        
+            case 'r':
             {
-                rate = atof(attr_buf);
-                
-                if ((rate - step) < 3e6) rate = 3e6; // avoid fractions
-                else rate -= step;
-                
-                iio_channel_attr_write_longlong(rxch, "sampling_frequency", rate);
+                ret = iio_channel_attr_read(rxch, "sampling_frequency", attr_buf, sizeof(attr_buf));
+                if (ret > 0)        
+                {
+                    rate = atof(attr_buf);
+                    
+                    if ((rate - step) < 3e6) rate = 3e6; // avoid fractions
+                    else rate -= step;
+                    
+                    iio_channel_attr_write_longlong(rxch, "sampling_frequency", rate);
+                }
+                break;
             }
-        }
 
-        else if (ch == 'R')
-        {
-            ret = iio_channel_attr_read(rxch, "sampling_frequency", attr_buf, sizeof(attr_buf));
-            if (ret > 0)        
+            case 'R':
             {
-                rate = atof(attr_buf);
-                
-                if ((rate + step) > 61e6) rate = 61e6; // avoid fractions
-                else rate += step;
+                ret = iio_channel_attr_read(rxch, "sampling_frequency", attr_buf, sizeof(attr_buf));
+                if (ret > 0)        
+                {
+                    rate = atof(attr_buf);
+                    
+                    if ((rate + step) > 61e6) rate = 61e6; // avoid fractions
+                    else rate += step;
 
-                iio_channel_attr_write_longlong(rxch, "sampling_frequency", rate);
+                    iio_channel_attr_write_longlong(rxch, "sampling_frequency", rate);
+                }
+                break;
             }
-        }
 
-        else if (ch == 'b')
-        {
-            ret = iio_channel_attr_read(rxch, "rf_bandwidth", attr_buf, sizeof(attr_buf));
-            if (ret > 0)        
+            case 'b':
             {
-                bw = atof(attr_buf);
+                ret = iio_channel_attr_read(rxch, "rf_bandwidth", attr_buf, sizeof(attr_buf));
+                if (ret > 0)        
+                {
+                    bw = atof(attr_buf);
 
-                if ((bw - step)  < 200e3) bw = 200e3;
-                else  bw -= step;
+                    if ((bw - step)  < 200e3) bw = 200e3;
+                    else  bw -= step;
 
-                iio_channel_attr_write_longlong(rxch, "rf_bandwidth", bw);
+                    iio_channel_attr_write_longlong(rxch, "rf_bandwidth", bw);
+                }
+                break;
             }
-        }
 
-        else if (ch == 'B')
-        {
-            ret = iio_channel_attr_read(rxch, "rf_bandwidth", attr_buf, sizeof(attr_buf));
-            if (ret > 0)        
+            case 'B':
             {
-                bw = atof(attr_buf);
-                
-                if ((bw + step) > 56e6) bw = 56e6;
-                else bw += step;
+                ret = iio_channel_attr_read(rxch, "rf_bandwidth", attr_buf, sizeof(attr_buf));
+                if (ret > 0)        
+                {
+                    bw = atof(attr_buf);
+                    
+                    if ((bw + step) > 56e6) bw = 56e6;
+                    else bw += step;
 
-                iio_channel_attr_write_longlong(rxch, "rf_bandwidth", bw);
+                    iio_channel_attr_write_longlong(rxch, "rf_bandwidth", bw);
+                }
+                break;
             }
-        }
 
-
-        else if (ch == 'g')
-        {
-            ret = iio_channel_attr_read(rxch, "hardwaregain", attr_buf, sizeof(attr_buf));            
-            if (ret > 0)        
+            case 'g':
             {
-                gain = atof(attr_buf);
-                
-                if (gain >= 0) gain -= 1;
+                ret = iio_channel_attr_read(rxch, "hardwaregain", attr_buf, sizeof(attr_buf));            
+                if (ret > 0)        
+                {
+                    gain = atof(attr_buf);
+                    
+                    if (gain >= 0) gain -= 1;
 
-                iio_channel_attr_write(rxch, "gain_control_mode", "manual"); // RX gain change only in manual mode   
-                iio_channel_attr_write_longlong(rxch,"hardwaregain", gain); // RX gain    
+                    iio_channel_attr_write(rxch, "gain_control_mode", "manual"); // RX gain change only in manual mode   
+                    iio_channel_attr_write_longlong(rxch,"hardwaregain", gain); // RX gain    
+                }
+                break;
             }
-        }
-        else if (ch == 'G')
-        {
-            ret = iio_channel_attr_read(rxch, "hardwaregain", attr_buf, sizeof(attr_buf));            
-            if (ret > 0)        
-            {
-                gain = atof(attr_buf);
-                
-                if (gain <= 72) gain += 1;
-
-                iio_channel_attr_write(rxch, "gain_control_mode", "manual"); // RX gain change only in manual mode   
-                iio_channel_attr_write_longlong(rxch,"hardwaregain", gain); // RX gain    
-            }            
-        }
-
-        else if (ch == 'f')
-        {
-            ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
             
-            if (ret > 0)        
+            case 'G':
             {
-                freq = atof(attr_buf);
-                
-                if ((freq - step) < 70e6) freq = 70e6;
-                else freq -= step;
-                
-                iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
+                ret = iio_channel_attr_read(rxch, "hardwaregain", attr_buf, sizeof(attr_buf));            
+                if (ret > 0)        
+                {
+                    gain = atof(attr_buf);
+                    
+                    if (gain <= 72) gain += 1;
+
+                    iio_channel_attr_write(rxch, "gain_control_mode", "manual"); // RX gain change only in manual mode   
+                    iio_channel_attr_write_longlong(rxch,"hardwaregain", gain); // RX gain    
+                }
+                break;
             }
 
-        }
+            case 'f':
+            {
+                ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
+                
+                if (ret > 0)        
+                {
+                    freq = atof(attr_buf);
+                    
+                    if ((freq - step) < 70e6) freq = 70e6;
+                    else freq -= step;
+                    
+                    iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
+                }
+                break;
+            }
 
-        else if (ch == 'F')
-        {
-            ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
+            case 'F':
+            {
+                ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
+                
+                if (ret > 0)        
+                {
+                    freq = atof(attr_buf);
+
+                    if ((freq + step) > 6e9) freq = 6e9;
+                    else freq += step;
+                    
+                    iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
+                }
+                break;
+            }
+
+            case 'l': { ref_lvl -= 10; break; }            
+            case 'L': { ref_lvl += 10; break; }
+            case 'd': { dyn_rng -= 10; break; }
+            case 'D': { dyn_rng += 10; break; }
+            case 's': { if (frame_rate > 1) frame_rate -= 1; break;}
+            case 'S': { frame_rate += 1; break; }
+            case 'n': { if (num_bins > 2) num_bins /= 2; break;}
+            case 'N': { num_bins *= 2; break; }
+            case 't': { if (step > 1) step /= 2; break; }
+            case 'T': { step *= 2; break; }
+            case 'c': { show_controls = false; break; }
+            case 'C': { show_controls = true; break; }
+     
+            case '\033':    // '\033' '[' 'A'/'B'/'C'/'D' -- Up / Down / Right / Left Press
+            {
+                getch();
+                switch(getch())
+                {
+    		        case 'A':
+                    case 'C':
+                        ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
+                        
+                        if (ret > 0)        
+                        {
+                            freq = atof(attr_buf);
+                            if (freq >= 6e9 || freq <= 70e6) continue;
+                            
+                            freq += step;
+                        
+                            iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
+                        }
+
+                        break;
+
+    		        case 'B':
+                    case 'D':                    
+                        ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
+                        
+                        if (ret > 0)        
+                        {
+                            freq = atof(attr_buf);
+                            if (freq >= 6e9 || freq <= 70e6) continue;
+                            
+                            freq -= step;
+                        
+                            iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
+                        }
+                        
+                        break;
+                }
+            }
             
-            if (ret > 0)        
+            case 'q':
+            case 'Q':
             {
-                freq = atof(attr_buf);
-
-                if ((freq + step) > 6e9) freq = 6e9;
-                else freq += step;
-                
-                iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
+                loop = false;
+                break;
             }
-
-        }
-
-        else if (ch == 'l') ref_lvl -= 10;
-        else if (ch == 'L') ref_lvl += 10;
-        else if (ch == 'd') dyn_rng -= 10;
-        else if (ch == 'D') dyn_rng += 10;
-        else if (ch == 's') { if (frame_rate > 1) frame_rate -= 1; }
-        else if (ch == 'S') frame_rate += 1;
-        else if (ch == 'n') { if (num_bins > 2) num_bins /= 2; }
-        else if (ch == 'N') num_bins *= 2;
-        else if (ch == 't') { if (step > 1) step /= 2; }
-        else if (ch == 'T') step *= 2;
- 
-        else if (ch == '\033')    // '\033' '[' 'A'/'B'/'C'/'D' -- Up / Down / Right / Left Press 
-        {
-            getch();
-            switch(getch())
-            {
-		        case 'A':
-                case 'C':
-                    ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
-                    
-                    if (ret > 0)        
-                    {
-                        freq = atof(attr_buf);
-                        if (freq >= 6e9 || freq <= 70e6) continue;
-                        
-                        freq += step;
-                    
-                        iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
-                    }
-
-                    break;
-
-		        case 'B':
-                case 'D':                    
-                    ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
-                    
-                    if (ret > 0)        
-                    {
-                        freq = atof(attr_buf);
-                        if (freq >= 6e9 || freq <= 70e6) continue;
-                        
-                        freq -= step;
-                    
-                        iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
-                    }
-                    
-                    break;
-            }
-        }
-        
-        else if (ch != KEY_RESIZE and ch != ERR) 
-        {
-            break;
         }
     }
 
