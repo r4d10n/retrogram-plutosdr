@@ -16,15 +16,17 @@ Hacked from Ettus UHD RX ASCII Art DFT code for ADALM PLUTO.
 
 Pan & Zoom spectrum using keyboard controls [decrement-Increment]. [[Full feature demo](https://www.youtube.com/watch?v=JnrknBrvYjw)]
 
-* Center Frequency using keys [f-F] 
-* Sampling rate    using keys [r-R]
-* Bandwidth 	   using keys [b-B]
-* Gain 		   using keys [g-G]
-* Reference level  using keys [l-L] 
-* Dynamic Range    using keys [d-D]
-* Frame rate       using keys [s-S]
-* DFT bin count    using keys [n-N]
-* Tuning step	   using keys [t-T]
+* Center Frequency 	using keys [f-F] 
+* Sampling rate    	using keys [r-R]
+* Bandwidth 	   	using keys [b-B]
+* Gain 		   	using keys [g-G]
+* Reference level  	using keys [l-L] 
+* Dynamic Range    	using keys [d-D]
+* Frame rate  		using keys [s-S]
+* DFT bin count    	using keys [n-N]
+* Tuning step	   	using keys [t-T]
+* Hide/Show controls	using keys [c-C]
+* Quit program		using keys [q-Q]
 
 Tuning step applies for decrementing / Incrementing Center Frequency, Sampling Rate and Bandwidth.
 
@@ -45,6 +47,7 @@ Tuning step applies for decrementing / Incrementing Center Frequency, Sampling R
 	  --ref-lvl arg (=0)          reference level for the display (dB) [l-L]
 	  --dyn-rng arg (=80)         dynamic range for the display (dB) [d-D]
 	  --step arg (=1000000)       tuning step for rate/bw/freq [t-T]
+	  --show-controls arg (=1)    show the keyboard controls
 
 ## Requires: libiio, libcurses, libboost-program-options
 	
@@ -96,7 +99,7 @@ The static binary can then be scp'ed to Pluto after build - steps shown below.
 
 ## TODO:
 
-* Generic support for osmosdr / rtlsdr devices
+* Generic support for osmosdr / [soapysdr](https://github.com/r4d10n/retrogram-soapysdr) / [rtlsdr](https://github.com/retrogram-rtlsdr) devices
 * Direct Freq Entry / parameter change 
 * Mouse tuning
 * Modularize / Optimize with std::vector transform
