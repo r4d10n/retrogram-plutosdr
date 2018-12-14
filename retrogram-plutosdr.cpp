@@ -227,7 +227,7 @@ int main(int argc, char *argv[])
     //-- Initialize
     //------------------------------------------------------------------
     initscr();
-    
+
     auto next_refresh = high_resolution_clock::now();
 
     void *p_dat, *p_end, *t_dat;
@@ -430,51 +430,48 @@ int main(int argc, char *argv[])
             case 'T': { step *= 2; break; }
             case 'c': { show_controls = false; break; }
             case 'C': { show_controls = true; break; }
-     
-            case '\033':    // '\033' '[' 'A'/'B'/'C'/'D' -- Up / Down / Right / Left Press
-            {
-                getch();
-                switch(getch())
-                {
-    		        case 'A':
-                    case 'C':
-                        ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
-                        
-                        if (ret > 0)        
-                        {
-                            freq = atof(attr_buf);
-                            if (freq >= 6e9 || freq <= 70e6) continue;
-                            
-                            freq += step;
-                        
-                            iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
-                        }
 
-                        break;
-
-    		        case 'B':
-                    case 'D':                    
-                        ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
-                        
-                        if (ret > 0)        
-                        {
-                            freq = atof(attr_buf);
-                            if (freq >= 6e9 || freq <= 70e6) continue;
-                            
-                            freq -= step;
-                        
-                            iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
-                        }
-                        
-                        break;
-                }
-            }
-            
             case 'q':
-            case 'Q':
+            case 'Q': { loop = false; break; }
+        }
+     
+        // Arrow keys handling: '\033' '[' 'A'/'B'/'C'/'D' -- Up / Down / Right / Left Press
+        if (ch == '\033')  
+        {
+            getch();
+            switch(getch())
             {
-                loop = false;
-                break;
+		        case 'A':
+                case 'C':
+                    ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
+                    
+                    if (ret > 0)        
+                    {
+                        freq = atof(attr_buf);
+                        if (freq >= 6e9 || freq <= 70e6) continue;
+                        
+                        freq += step;
+                    
+                        iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
+                    }
+
+                    break;
+
+		        case 'B':
+                case 'D':                    
+                    ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
+                    
+                    if (ret > 0)        
+                    {
+                        freq = atof(attr_buf);
+                        if (freq >= 6e9 || freq <= 70e6) continue;
+                        
+                        freq -= step;
+                    
+                        iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
+                    }
+                    
+                    break;
             }
         }
     }
