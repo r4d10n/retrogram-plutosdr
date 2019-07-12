@@ -51,7 +51,7 @@ Tuning step applies for decrementing / Incrementing Center Frequency, Sampling R
 
 ## Requires: libiio, libcurses, libboost-program-options
 	
-	sudo apt install libiio-dev libncurses5-dev libboost-program-options-dev
+	sudo apt install libiio-dev libncurses5-dev libboost-program-options-dev libgpm-dev
 
 ## Build:
 
