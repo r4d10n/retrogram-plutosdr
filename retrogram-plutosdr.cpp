@@ -1,16 +1,17 @@
 /*
 
-          _                                      /\/|     _       _        _________________ 
+          _                                      /\/|     _       _        _________________
          | |                                    |/\/     | |     | |      /  ___|  _  \ ___ \
  _ __ ___| |_ _ __ ___   __ _ _ __ __ _ _ __ ___    _ __ | |_   _| |_ ___ \ `--.| | | | |_/ /
-| '__/ _ \ __| '__/ _ \ / _` | '__/ _` | '_ ` _ \  | '_ \| | | | | __/ _ \ `--. \ | | |    / 
-| | |  __/ |_| | | (_) | (_| | | | (_| | | | | | | | |_) | | |_| | || (_) /\__/ / |/ /| |\ \ 
+| '__/ _ \ __| '__/ _ \ / _` | '__/ _` | '_ ` _ \  | '_ \| | | | | __/ _ \ `--. \ | | |    /
+| | |  __/ |_| | | (_) | (_| | | | (_| | | | | | | | |_) | | |_| | || (_) /\__/ / |/ /| |\ \
 |_|  \___|\__|_|  \___/ \__, |_|  \__,_|_| |_| |_| | .__/|_|\__,_|\__\___/\____/|___/ \_| \_|
-                         __/ |                     | |                                       
-                        |___/                      |_|                                       
+                         __/ |                     | |
+                        |___/                      |_|
 
-Wideband Spectrum analyzer on your terminal/ssh console with ASCII art. 
+Wideband Spectrum analyzer on your terminal/ssh console with ASCII art.
 Hacked from Ettus UHD RX ASCII Art DFT code for ADALM PLUTO.
+Peak Hold feature by henrikssn [https://github.com/henrikssn]
 
 */
 //
@@ -85,14 +86,15 @@ static struct iio_context *scan(void)
 
 int main(int argc, char *argv[])
 {
-    
+
     //variables to be set by po
-    std::string uri; 
+    std::string uri;
     size_t num_bins;
     double rate, freq, step, gain, bw, frame_rate;
     float ref_lvl, dyn_rng;
     bool show_controls;
-    
+    bool peak_hold;
+
     ssize_t ret;
     char attr_buf[1024];
 
@@ -103,7 +105,7 @@ int main(int argc, char *argv[])
     po::options_description desc("\nAllowed options");
     desc.add_options()
         ("help", "help message")
-        ("uri", po::value<std::string>(&uri)->default_value("ip:192.168.2.1"), "pluto device uri")    
+        ("uri", po::value<std::string>(&uri)->default_value("ip:192.168.2.1"), "pluto device uri")
         // hardware parameters
         ("rate", po::value<double>(&rate)->default_value(10e6), "rate of incoming samples (sps) [r-R] [2.5e6..1..61.44e6]")
         ("freq", po::value<double>(&freq)->default_value(100e6), "RF center frequency in Hz [f-F] [70e6..1..6000e6] ")
@@ -112,6 +114,7 @@ int main(int argc, char *argv[])
         // display parameters
         ("num-bins", po::value<size_t>(&num_bins)->default_value(512), "the number of bins in the DFT [n-N]")
         ("frame-rate", po::value<double>(&frame_rate)->default_value(15), "frame rate of the display (fps) [s-S]")
+        ("peak-hold", po::value<bool>(&peak_hold)->default_value(false), "enable peak hold [h-H]")
         ("ref-lvl", po::value<float>(&ref_lvl)->default_value(0), "reference level for the display (dB) [l-L]")
         ("dyn-rng", po::value<float>(&dyn_rng)->default_value(80), "dynamic range for the display (dB) [d-D]")
         ("step", po::value<double>(&step)->default_value(1e6), "tuning step for rate/bw/freq [t-T]")
@@ -132,12 +135,12 @@ int main(int argc, char *argv[])
     //create pluto device instance
     std::cout << std::endl;
     std::cout << boost::format("Creating the pluto device with options: %s...") % uri << std::endl << std::endl;
-    
+
     struct iio_context *ctx;
-    
+
     if (vm.count("uri"))
         ctx = iio_create_context_from_uri(uri.c_str());
-    else 
+    else
         ctx = scan();
 
     if (!ctx) {
@@ -149,7 +152,7 @@ int main(int argc, char *argv[])
     struct iio_device *dev;
     struct iio_channel *rx0_i, *rx0_q, *rxch;
     struct iio_buffer *rxbuf;
-    
+
 
     phy = iio_context_find_device(ctx,"ad9361-phy");
 
@@ -160,7 +163,7 @@ int main(int argc, char *argv[])
     }
 
     dev = iio_context_find_device(ctx, "cf-ad9361-lpc");
-    
+
     if (!dev) {
         fprintf(stderr, "Device [cf-ad9361-lpc] not found\n");
         iio_context_destroy(ctx);
@@ -178,23 +181,23 @@ int main(int argc, char *argv[])
     //set the sample rate
     std::cout << boost::format("Setting RX Rate: %f Msps...") % (rate/1e6);
     iio_channel_attr_write_longlong(rxch, "sampling_frequency",rate); // RX baseband sample rate
-    
+
     ret = iio_channel_attr_read(rxch, "sampling_frequency", attr_buf, sizeof(attr_buf));
     if (ret > 0) std::cout << boost::format(" >> Actual RX Rate: %f Msps...") % (atol(attr_buf)/1e6) << std::endl << std::endl;
     else std::cout << "Error reading RX Rate" << std::endl << std::endl;
-    
+
     //set the center frequency
     std::cout << boost::format("Setting RX Freq: %f MHz...") % (freq/1e6);
     iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
-    
+
     ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
     if (ret > 0) std::cout << boost::format(" >> Actual RX Freq: %f MHz...") % (atol(attr_buf)/1e6) << std::endl << std::endl;
     else std::cout << "Error reading RX Freq" << std::endl << std::endl;
 
     //set the rf gain
     std::cout << boost::format("Setting RX Gain: %f dB...") % gain;
-    iio_channel_attr_write(rxch, "gain_control_mode", "manual"); // RX gain change only in manual mode   
-    iio_channel_attr_write_longlong(rxch, "hardwaregain", gain); // RX gain    
+    iio_channel_attr_write(rxch, "gain_control_mode", "manual"); // RX gain change only in manual mode
+    iio_channel_attr_write_longlong(rxch, "hardwaregain", gain); // RX gain
 
     ret = iio_channel_attr_read(rxch, "hardwaregain", attr_buf, sizeof(attr_buf));
     if (ret > 0) std::cout << boost::format(" >> Actual RX Gain: %f ...") % (atol(attr_buf)) << std::endl << std::endl;
@@ -202,14 +205,14 @@ int main(int argc, char *argv[])
 
     //set the RF filter bandwidth
 
-    std::cout << boost::format("Setting RX Bandwidth: %f MHz...") % (bw/1e6);        
+    std::cout << boost::format("Setting RX Bandwidth: %f MHz...") % (bw/1e6);
     iio_channel_attr_write_longlong( rxch, "rf_bandwidth", bw); // RF bandwidth
 
     ret = iio_channel_attr_read(rxch, "rf_bandwidth", attr_buf, sizeof(attr_buf));
     if (ret > 0) std::cout << boost::format(" >> Actual RX Bandwidth: %f MHz ...") % (atol(attr_buf)/1e6) << std::endl << std::endl;
     else std::cout << "Error reading RX Bandwidth" << std::endl << std::endl;
-        
-    
+
+
     std::this_thread::sleep_for(std::chrono::seconds(1)); //allow for some setup time
 
     std::vector<std::complex<float> > buff(num_bins);
@@ -237,10 +240,13 @@ int main(int argc, char *argv[])
     //------------------------------------------------------------------
     //-- Main loop
     //------------------------------------------------------------------
+
+    ascii_art_dft::log_pwr_dft_type last_lpdft;
+
     while (loop){
-        
+
         buff.clear();
-    
+
         iio_buffer_refill(rxbuf);
 
         p_inc = iio_buffer_step(rxbuf);
@@ -254,6 +260,24 @@ int main(int argc, char *argv[])
             buff.push_back(std::complex<float> ( i,  q ));
         }
 
+        // Return early to save CPU if peak hold is disabled and no refresh is required.
+        if (!peak_hold && high_resolution_clock::now() < next_refresh) {
+            continue;
+        }
+
+        //calculate the dft and create the ascii art frame
+        ascii_art_dft::log_pwr_dft_type lpdft(
+            ascii_art_dft::log_pwr_dft(&buff.front(), buff.size())
+        );
+
+        // For peak hold, compute the max of last DFT and current one
+        if (peak_hold && last_lpdft.size() == lpdft.size()) {
+            for (size_t i = 0; i < lpdft.size(); ++i) {
+                lpdft[i] = std::max(lpdft[i], last_lpdft[i]);
+            }
+        }
+        last_lpdft = lpdft;
+
         //check and update the display refresh condition
         if (high_resolution_clock::now() < next_refresh) {
             continue;
@@ -262,32 +286,29 @@ int main(int argc, char *argv[])
             high_resolution_clock::now()
             + std::chrono::microseconds(int64_t(1e6/frame_rate));
 
-        //calculate the dft and create the ascii art frame
-        ascii_art_dft::log_pwr_dft_type lpdft(
-            ascii_art_dft::log_pwr_dft(&buff.front(), buff.size())
-        );
         std::string frame = ascii_art_dft::dft_to_plot(
             lpdft, COLS, (show_controls ? LINES-5 : LINES),
-            rate, 
-            freq, 
+            rate,
+            freq,
             dyn_rng, ref_lvl
         );
 
         std::string header = std::string((COLS-26)/2, '-');
     	std::string border = std::string((COLS), '-');
-    
+
         //curses screen handling: clear and print frame
-        clear();        
+        clear();
         if (show_controls)
         {
             printw("%s-={ retrogram~plutosdr }=-%s-",header.c_str(),header.c_str());
             printw("[f-F]req: %4.3f MHz   |   [r-R]ate: %2.2f Msps   |   [b-B]w: %2.2f MHz"
-                   "   |   [g-G]ain: %2.0f dB\n\n", freq/1e6, rate/1e6, bw/1e6, gain);
+                   "   |   [g-G]ain: %2.0f dB", freq/1e6, rate/1e6, bw/1e6, gain);
+            printw("   |    Peak [h-H]hold: %s\n\n", peak_hold ? "On" : "Off");
             printw("[d-D]yn Range: %2.0f dB    |   Ref [l-L]evel: %2.0f dB   |   fp[s-S] :"
-                   " %2.0f   |   [n-N]um bins: %d   |   [t-T]uning step: %3.3f M\n", 
+                   " %2.0f   |   [n-N]um bins: %d   |   [t-T]uning step: %3.3f M\n",
                    dyn_rng, ref_lvl, frame_rate, num_bins,step/1e6, show_controls);
             printw("%s", border.c_str());
-        }        
+        }
         printw("%s\n", frame.c_str());
 
         //curses key handling: no timeout, any key to exit
@@ -299,13 +320,13 @@ int main(int argc, char *argv[])
             case 'r':
             {
                 ret = iio_channel_attr_read(rxch, "sampling_frequency", attr_buf, sizeof(attr_buf));
-                if (ret > 0)        
+                if (ret > 0)
                 {
                     rate = atof(attr_buf);
-                    
+
                     if ((rate - step) < 3e6) rate = 3e6; // avoid fractions
                     else rate -= step;
-                    
+
                     iio_channel_attr_write_longlong(rxch, "sampling_frequency", rate);
                 }
                 break;
@@ -314,10 +335,10 @@ int main(int argc, char *argv[])
             case 'R':
             {
                 ret = iio_channel_attr_read(rxch, "sampling_frequency", attr_buf, sizeof(attr_buf));
-                if (ret > 0)        
+                if (ret > 0)
                 {
                     rate = atof(attr_buf);
-                    
+
                     if ((rate + step) > 61e6) rate = 61e6; // avoid fractions
                     else rate += step;
 
@@ -329,7 +350,7 @@ int main(int argc, char *argv[])
             case 'b':
             {
                 ret = iio_channel_attr_read(rxch, "rf_bandwidth", attr_buf, sizeof(attr_buf));
-                if (ret > 0)        
+                if (ret > 0)
                 {
                     bw = atof(attr_buf);
 
@@ -344,10 +365,10 @@ int main(int argc, char *argv[])
             case 'B':
             {
                 ret = iio_channel_attr_read(rxch, "rf_bandwidth", attr_buf, sizeof(attr_buf));
-                if (ret > 0)        
+                if (ret > 0)
                 {
                     bw = atof(attr_buf);
-                    
+
                     if ((bw + step) > 56e6) bw = 56e6;
                     else bw += step;
 
@@ -358,30 +379,30 @@ int main(int argc, char *argv[])
 
             case 'g':
             {
-                ret = iio_channel_attr_read(rxch, "hardwaregain", attr_buf, sizeof(attr_buf));            
-                if (ret > 0)        
+                ret = iio_channel_attr_read(rxch, "hardwaregain", attr_buf, sizeof(attr_buf));
+                if (ret > 0)
                 {
                     gain = atof(attr_buf);
-                    
+
                     if (gain >= 0) gain -= 1;
 
-                    iio_channel_attr_write(rxch, "gain_control_mode", "manual"); // RX gain change only in manual mode   
-                    iio_channel_attr_write_longlong(rxch,"hardwaregain", gain); // RX gain    
+                    iio_channel_attr_write(rxch, "gain_control_mode", "manual"); // RX gain change only in manual mode
+                    iio_channel_attr_write_longlong(rxch,"hardwaregain", gain); // RX gain
                 }
                 break;
             }
-            
+
             case 'G':
             {
-                ret = iio_channel_attr_read(rxch, "hardwaregain", attr_buf, sizeof(attr_buf));            
-                if (ret > 0)        
+                ret = iio_channel_attr_read(rxch, "hardwaregain", attr_buf, sizeof(attr_buf));
+                if (ret > 0)
                 {
                     gain = atof(attr_buf);
-                    
+
                     if (gain <= 72) gain += 1;
 
-                    iio_channel_attr_write(rxch, "gain_control_mode", "manual"); // RX gain change only in manual mode   
-                    iio_channel_attr_write_longlong(rxch,"hardwaregain", gain); // RX gain    
+                    iio_channel_attr_write(rxch, "gain_control_mode", "manual"); // RX gain change only in manual mode
+                    iio_channel_attr_write_longlong(rxch,"hardwaregain", gain); // RX gain
                 }
                 break;
             }
@@ -389,14 +410,14 @@ int main(int argc, char *argv[])
             case 'f':
             {
                 ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
-                
-                if (ret > 0)        
+
+                if (ret > 0)
                 {
                     freq = atof(attr_buf);
-                    
+
                     if ((freq - step) < 70e6) freq = 70e6;
                     else freq -= step;
-                    
+
                     iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
                 }
                 break;
@@ -405,20 +426,22 @@ int main(int argc, char *argv[])
             case 'F':
             {
                 ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
-                
-                if (ret > 0)        
+
+                if (ret > 0)
                 {
                     freq = atof(attr_buf);
 
                     if ((freq + step) > 6e9) freq = 6e9;
                     else freq += step;
-                    
+
                     iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
                 }
                 break;
             }
-
-            case 'l': { ref_lvl -= 10; break; }            
+            
+            case 'h': { peak_hold = false; break; }
+            case 'H': { peak_hold = true; break; }
+            case 'l': { ref_lvl -= 10; break; }
             case 'L': { ref_lvl += 10; break; }
             case 'd': { dyn_rng -= 10; break; }
             case 'D': { dyn_rng += 10; break; }
@@ -434,9 +457,9 @@ int main(int argc, char *argv[])
             case 'q':
             case 'Q': { loop = false; break; }
         }
-     
+
         // Arrow keys handling: '\033' '[' 'A'/'B'/'C'/'D' -- Up / Down / Right / Left Press
-        if (ch == '\033')  
+        if (ch == '\033')
         {
             getch();
             switch(getch())
@@ -444,33 +467,33 @@ int main(int argc, char *argv[])
 		        case 'A':
                 case 'C':
                     ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
-                    
-                    if (ret > 0)        
+
+                    if (ret > 0)
                     {
                         freq = atof(attr_buf);
                         if (freq >= 6e9 || freq <= 70e6) continue;
-                        
+
                         freq += step;
-                    
+
                         iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
                     }
 
                     break;
 
 		        case 'B':
-                case 'D':                    
+                case 'D':
                     ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
-                    
-                    if (ret > 0)        
+
+                    if (ret > 0)
                     {
                         freq = atof(attr_buf);
                         if (freq >= 6e9 || freq <= 70e6) continue;
-                        
+
                         freq -= step;
-                    
+
                         iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
                     }
-                    
+
                     break;
             }
         }
