@@ -286,12 +286,17 @@ int main(int argc, char *argv[])
             high_resolution_clock::now()
             + std::chrono::microseconds(int64_t(1e6/frame_rate));
 
-        std::string frame = ascii_art_dft::dft_to_plot(
-            lpdft, COLS, (show_controls ? LINES-5 : LINES),
-            rate,
-            freq,
-            dyn_rng, ref_lvl
-        );
+        std::string frame;
+        try
+        {
+                 frame = ascii_art_dft::dft_to_plot(
+                    lpdft, COLS, (show_controls ? LINES-5 : LINES),
+                    rate,
+                    freq,
+                    dyn_rng, ref_lvl
+                );
+        }
+        catch(...){}
 
         std::string header = std::string((COLS-26)/2, '-');
     	std::string border = std::string((COLS), '-');
