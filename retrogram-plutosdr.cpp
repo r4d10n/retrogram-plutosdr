@@ -37,6 +37,41 @@ Peak Hold feature by henrikssn [https://github.com/henrikssn]
 namespace po = boost::program_options;
 using std::chrono::high_resolution_clock;
 
+// A class to hold a tunable parameter
+class Parameter
+{
+    public:
+        Parameter(std::string name, double &value, double min, double max, double step, int x, int y)
+            : name(name), value(value), min(min), max(max), step(step), x(x), y(y) {}
+
+        void draw(WINDOW *w, bool selected)
+        {
+            if(selected)
+                wattron(w, A_REVERSE);
+            mvwprintw(w, y, x, "%s: ", name.c_str());
+            if (value > 1e6)
+                wprintw(w, "%3.3fM", value/1e6);
+            else if (value > 1e3)
+                wprintw(w, "%3.3fK", value/1e3);
+            else
+                wprintw(w, "%3.3f", value);
+
+            if(selected)
+                wattroff(w, A_REVERSE);
+        }
+
+        bool is_coord_in(int cx, int cy)
+        {
+            int len = name.length() + 10;
+            return (cy == y && cx >= x && cx <= x + len);
+        }
+
+        std::string name;
+        double &value;
+        double min, max, step;
+        int x, y;
+};
+
 static struct iio_context *scan(void)
 {
     struct iio_scan_context *scan_ctx;
@@ -84,6 +119,19 @@ static struct iio_context *scan(void)
     return ctx;
 }
 
+// A function to apply a parameter change to the hardware
+void apply_parameter_change(Parameter &p, iio_device *phy, iio_channel *rxch)
+{
+    if (p.name == "Freq")
+        iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", p.value);
+    else if (p.name == "Rate")
+        iio_channel_attr_write_longlong(rxch, "sampling_frequency", p.value);
+    else if (p.name == "BW")
+        iio_channel_attr_write_longlong(rxch, "rf_bandwidth", p.value);
+    else if (p.name == "Gain")
+        iio_channel_attr_write_longlong(rxch, "hardwaregain", p.value);
+}
+
 int main(int argc, char *argv[])
 {
 
@@ -107,17 +155,17 @@ int main(int argc, char *argv[])
         ("help", "help message")
         ("uri", po::value<std::string>(&uri)->default_value("ip:192.168.2.1"), "pluto device uri")
         // hardware parameters
-        ("rate", po::value<double>(&rate)->default_value(10e6), "rate of incoming samples (sps) [r-R] [2.5e6..1..61.44e6]")
-        ("freq", po::value<double>(&freq)->default_value(100e6), "RF center frequency in Hz [f-F] [70e6..1..6000e6] ")
-        ("gain", po::value<double>(&gain)->default_value(73), "gain for the RF chain [g-G] [-3..1..73]")
-        ("bw", po::value<double>(&bw)->default_value(56e6), "RF filter bandwidth in Hz [b-B] [200000..1..56000000]")
+        ("rate", po::value<double>(&rate)->default_value(10e6), "rate of incoming samples (sps) [2.5e6..1..61.44e6]")
+        ("freq", po::value<double>(&freq)->default_value(100e6), "RF center frequency in Hz [70e6..1..6000e6] ")
+        ("gain", po::value<double>(&gain)->default_value(73), "gain for the RF chain [-3..1..73]")
+        ("bw", po::value<double>(&bw)->default_value(56e6), "RF filter bandwidth in Hz [200000..1..56000000]")
         // display parameters
-        ("num-bins", po::value<size_t>(&num_bins)->default_value(512), "the number of bins in the DFT [n-N]")
-        ("frame-rate", po::value<double>(&frame_rate)->default_value(15), "frame rate of the display (fps) [s-S]")
-        ("peak-hold", po::value<bool>(&peak_hold)->default_value(false), "enable peak hold [h-H]")
-        ("ref-lvl", po::value<float>(&ref_lvl)->default_value(0), "reference level for the display (dB) [l-L]")
-        ("dyn-rng", po::value<float>(&dyn_rng)->default_value(80), "dynamic range for the display (dB) [d-D]")
-        ("step", po::value<double>(&step)->default_value(1e6), "tuning step for rate/bw/freq [t-T]")
+        ("num-bins", po::value<size_t>(&num_bins)->default_value(512), "the number of bins in the DFT")
+        ("frame-rate", po::value<double>(&frame_rate)->default_value(15), "frame rate of the display (fps)")
+        ("peak-hold", po::value<bool>(&peak_hold)->default_value(false), "enable peak hold")
+        ("ref-lvl", po::value<float>(&ref_lvl)->default_value(0), "reference level for the display (dB)")
+        ("dyn-rng", po::value<float>(&dyn_rng)->default_value(80), "dynamic range for the display (dB)")
+        ("step", po::value<double>(&step)->default_value(1e6), "tuning step for rate/bw/freq")
         ("show-controls", po::value<bool>(&show_controls)->default_value(true), "show the keyboard controls")
     ;
     po::variables_map vm;
@@ -230,6 +278,30 @@ int main(int argc, char *argv[])
     //-- Initialize
     //------------------------------------------------------------------
     initscr();
+    noecho();
+    cbreak();
+    curs_set(0);
+    keypad(stdscr, TRUE);
+    mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
+    mouseinterval(0);
+
+    double d_num_bins = num_bins;
+    double d_dyn_rng = dyn_rng;
+    double d_ref_lvl = ref_lvl;
+    double d_frame_rate = frame_rate;
+
+    std::vector<Parameter> params;
+    params.push_back(Parameter("Freq", freq, 70e6, 6e9, step, 2, 1));
+    params.push_back(Parameter("Rate", rate, 2.5e6, 61.44e6, step, 24, 1));
+    params.push_back(Parameter("BW", bw, 200e3, 56e6, step, 44, 1));
+    params.push_back(Parameter("Gain", gain, -3, 73, 1, 64, 1));
+
+    params.push_back(Parameter("Dyn Rng", d_dyn_rng, 10, 120, 10, 2, 3));
+    params.push_back(Parameter("Ref Lvl", d_ref_lvl, -100, 50, 10, 24, 3));
+    params.push_back(Parameter("FPS", d_frame_rate, 1, 60, 1, 44, 3));
+    params.push_back(Parameter("Bins", d_num_bins, 32, 8192, 2, 60, 3));
+    params.push_back(Parameter("Step", step, 1e3, 10e6, 2, 74, 3));
+    int selected_param = -1;
 
     auto next_refresh = high_resolution_clock::now();
 
@@ -244,6 +316,14 @@ int main(int argc, char *argv[])
     ascii_art_dft::log_pwr_dft_type last_lpdft;
 
     while (loop){
+
+        num_bins = d_num_bins;
+        dyn_rng = d_dyn_rng;
+        ref_lvl = d_ref_lvl;
+        frame_rate = d_frame_rate;
+        params[0].step = step;
+        params[1].step = step;
+        params[2].step = step;
 
         buff.clear();
 
@@ -305,14 +385,12 @@ int main(int argc, char *argv[])
         clear();
         if (show_controls)
         {
-            printw("%s-={ retrogram~plutosdr }=-%s-",header.c_str(),header.c_str());
-            printw("[f-F]req: %4.3f MHz   |   [r-R]ate: %2.2f Msps   |   [b-B]w: %2.2f MHz"
-                   "   |   [g-G]ain: %2.0f dB", freq/1e6, rate/1e6, bw/1e6, gain);
-            printw("   |    Peak [h-H]hold: %s\n\n", peak_hold ? "On" : "Off");
-            printw("[d-D]yn Range: %2.0f dB    |   Ref [l-L]evel: %2.0f dB   |   fp[s-S] :"
-                   " %2.0f   |   [n-N]um bins: %d   |   [t-T]uning step: %3.3f M\n",
-                   dyn_rng, ref_lvl, frame_rate, num_bins,step/1e6, show_controls);
-            printw("%s", border.c_str());
+            mvprintw(0, 0, "%s-={ retrogram~plutosdr }=-%s-",header.c_str(),header.c_str());
+            for(unsigned int i=0; i < params.size(); i++)
+                params[i].draw(stdscr, i == selected_param);
+
+            mvprintw(2, 0, "Peak hold: %s", peak_hold ? "On" : "Off");
+            mvprintw(4, 0, "%s", border.c_str());
         }
         printw("%s\n", frame.c_str());
 
@@ -320,186 +398,111 @@ int main(int argc, char *argv[])
         timeout(0);
         ch = getch();
 
-        switch(ch)
+        if (ch == 'q' || ch == 'Q')
+            loop = false;
+        else if (ch == 'h' || ch == 'H')
+            peak_hold = !peak_hold;
+        else if (ch == 'c' || ch == 'C')
+            show_controls = !show_controls;
+        else if (ch == '+' || ch == '=')
         {
-            case 'r':
+            if (selected_param != -1)
             {
-                ret = iio_channel_attr_read(rxch, "sampling_frequency", attr_buf, sizeof(attr_buf));
-                if (ret > 0)
-                {
-                    rate = atof(attr_buf);
-
-                    if ((rate - step) < 3e6) rate = 3e6; // avoid fractions
-                    else rate -= step;
-
-                    iio_channel_attr_write_longlong(rxch, "sampling_frequency", rate);
-                }
-                break;
+                Parameter &p = params[selected_param];
+                p.value += p.step;
+                if(p.value > p.max) p.value = p.max;
+                apply_parameter_change(p, phy, rxch);
             }
-
-            case 'R':
-            {
-                ret = iio_channel_attr_read(rxch, "sampling_frequency", attr_buf, sizeof(attr_buf));
-                if (ret > 0)
-                {
-                    rate = atof(attr_buf);
-
-                    if ((rate + step) > 61e6) rate = 61e6; // avoid fractions
-                    else rate += step;
-
-                    iio_channel_attr_write_longlong(rxch, "sampling_frequency", rate);
-                }
-                break;
-            }
-
-            case 'b':
-            {
-                ret = iio_channel_attr_read(rxch, "rf_bandwidth", attr_buf, sizeof(attr_buf));
-                if (ret > 0)
-                {
-                    bw = atof(attr_buf);
-
-                    if ((bw - step)  < 200e3) bw = 200e3;
-                    else  bw -= step;
-
-                    iio_channel_attr_write_longlong(rxch, "rf_bandwidth", bw);
-                }
-                break;
-            }
-
-            case 'B':
-            {
-                ret = iio_channel_attr_read(rxch, "rf_bandwidth", attr_buf, sizeof(attr_buf));
-                if (ret > 0)
-                {
-                    bw = atof(attr_buf);
-
-                    if ((bw + step) > 56e6) bw = 56e6;
-                    else bw += step;
-
-                    iio_channel_attr_write_longlong(rxch, "rf_bandwidth", bw);
-                }
-                break;
-            }
-
-            case 'g':
-            {
-                ret = iio_channel_attr_read(rxch, "hardwaregain", attr_buf, sizeof(attr_buf));
-                if (ret > 0)
-                {
-                    gain = atof(attr_buf);
-
-                    if (gain >= 0) gain -= 1;
-
-                    iio_channel_attr_write(rxch, "gain_control_mode", "manual"); // RX gain change only in manual mode
-                    iio_channel_attr_write_longlong(rxch,"hardwaregain", gain); // RX gain
-                }
-                break;
-            }
-
-            case 'G':
-            {
-                ret = iio_channel_attr_read(rxch, "hardwaregain", attr_buf, sizeof(attr_buf));
-                if (ret > 0)
-                {
-                    gain = atof(attr_buf);
-
-                    if (gain <= 72) gain += 1;
-
-                    iio_channel_attr_write(rxch, "gain_control_mode", "manual"); // RX gain change only in manual mode
-                    iio_channel_attr_write_longlong(rxch,"hardwaregain", gain); // RX gain
-                }
-                break;
-            }
-
-            case 'f':
-            {
-                ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
-
-                if (ret > 0)
-                {
-                    freq = atof(attr_buf);
-
-                    if ((freq - step) < 70e6) freq = 70e6;
-                    else freq -= step;
-
-                    iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
-                }
-                break;
-            }
-
-            case 'F':
-            {
-                ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
-
-                if (ret > 0)
-                {
-                    freq = atof(attr_buf);
-
-                    if ((freq + step) > 6e9) freq = 6e9;
-                    else freq += step;
-
-                    iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
-                }
-                break;
-            }
-            
-            case 'h': { peak_hold = false; break; }
-            case 'H': { peak_hold = true; break; }
-            case 'l': { ref_lvl -= 10; break; }
-            case 'L': { ref_lvl += 10; break; }
-            case 'd': { dyn_rng -= 10; break; }
-            case 'D': { dyn_rng += 10; break; }
-            case 's': { if (frame_rate > 1) frame_rate -= 1; break;}
-            case 'S': { frame_rate += 1; break; }
-            case 'n': { if (num_bins > 2) num_bins /= 2; break;}
-            case 'N': { num_bins *= 2; break; }
-            case 't': { if (step > 1) step /= 2; break; }
-            case 'T': { step *= 2; break; }
-            case 'c': { show_controls = false; break; }
-            case 'C': { show_controls = true; break; }
-
-            case 'q':
-            case 'Q': { loop = false; break; }
         }
-
-        // Arrow keys handling: '\033' '[' 'A'/'B'/'C'/'D' -- Up / Down / Right / Left Press
-        if (ch == '\033')
+        else if (ch == '-' || ch == '_')
         {
-            getch();
-            switch(getch())
+            if (selected_param != -1)
             {
-		        case 'A':
-                case 'C':
-                    ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
-
-                    if (ret > 0)
+                Parameter &p = params[selected_param];
+                p.value -= p.step;
+                if(p.value < p.min) p.value = p.min;
+                apply_parameter_change(p, phy, rxch);
+            }
+        }
+        else if (ch == KEY_UP || ch == KEY_RIGHT)
+        {
+            freq += step;
+            if(freq > params[0].max) freq = params[0].max;
+            iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);
+        }
+        else if (ch == KEY_DOWN || ch == KEY_LEFT)
+        {
+            freq -= step;
+            if(freq < params[0].min) freq = params[0].min;
+            iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);
+        }
+        else if(ch == KEY_MOUSE)
+        {
+            MEVENT event;
+            if(getmouse(&event) == OK)
+            {
+                if(event.bstate & BUTTON1_PRESSED)
+                {
+                    selected_param = -1;
+                    for(unsigned int i=0; i < params.size(); i++)
                     {
-                        freq = atof(attr_buf);
-                        if (freq >= 6e9 || freq <= 70e6) continue;
-
-                        freq += step;
-
-                        iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
+                        if(params[i].is_coord_in(event.x, event.y))
+                        {
+                            selected_param = i;
+                            break;
+                        }
                     }
-
-                    break;
-
-		        case 'B':
-                case 'D':
-                    ret = iio_channel_attr_read(iio_device_find_channel(phy, "altvoltage0", true), "frequency", attr_buf, sizeof(attr_buf));
-
-                    if (ret > 0)
+                }
+                else if(event.bstate & BUTTON4_PRESSED) // scroll up
+                {
+                    if(selected_param != -1)
                     {
-                        freq = atof(attr_buf);
-                        if (freq >= 6e9 || freq <= 70e6) continue;
-
-                        freq -= step;
-
-                        iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);  // RX LO
+                        Parameter &p = params[selected_param];
+                        p.value += p.step;
+                        if(p.value > p.max) p.value = p.max;
+                        apply_parameter_change(p, phy, rxch);
                     }
-
-                    break;
+                    else
+                    {
+                        if (event.bstate & BUTTON_SHIFT)
+                        {
+                            rate += step;
+                            if(rate > params[1].max) rate = params[1].max;
+                            iio_channel_attr_write_longlong(rxch, "sampling_frequency",rate);
+                        }
+                        else
+                        {
+                            freq += step;
+                            if(freq > params[0].max) freq = params[0].max;
+                            iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);
+                        }
+                    }
+                }
+                else if(event.bstate & BUTTON5_PRESSED) // scroll down
+                {
+                    if(selected_param != -1)
+                    {
+                        Parameter &p = params[selected_param];
+                        p.value -= p.step;
+                        if(p.value < p.min) p.value = p.min;
+                        apply_parameter_change(p, phy, rxch);
+                    }
+                    else
+                    {
+                        if (event.bstate & BUTTON_SHIFT)
+                        {
+                            rate -= step;
+                            if(rate < params[1].min) rate = params[1].min;
+                            iio_channel_attr_write_longlong(rxch, "sampling_frequency",rate);
+                        }
+                        else
+                        {
+                            freq -= step;
+                            if(freq < params[0].min) freq = params[0].min;
+                            iio_channel_attr_write_longlong(iio_device_find_channel(phy, "altvoltage0", true), "frequency", freq);
+                        }
+                    }
+                }
             }
         }
     }
